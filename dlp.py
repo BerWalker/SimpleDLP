@@ -2,77 +2,71 @@ import sys
 import re
 import json
 
-regex = {
-    "cpf": re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b"),
-    "email": re.compile(r"\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}\b", re.IGNORECASE),
-    "apikey": re.compile(r"(?i)\b(?:api[_-]?\s*key|apikey|key)\b[\s:=\"']+([A-Za-z0-9\-_./+=]{16,128})"),
-    "cellphone": re.compile(r"\b(?:\+?55\s?)?(?:\(?[1-9][0-9]\)?\s?)?(?:9?\d{4})-?\d{4}\b"),
-    "ip": re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d{1,2})\.){3}(?:25[0-5]|2[0-4]\d|1?\d{1,2})\b")
-}
+def load_regex(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {k: re.compile(v, re.IGNORECASE) for k, v in data.items()}
+    except FileNotFoundError:
+        print(f"Regex file '{path}' not found.")
+        sys.exit(1)
+    except json.JSONDecodeError:
+        print(f"Invalid JSON format in '{path}'.")
+        sys.exit(1)
+    except re.error as e:
+        print(f"Invalid regex pattern: {e}")
+        sys.exit(1)
 
-def detect_info(text):
-    all_matches = {}
-    for name, pattern in regex.items():
-        matches = pattern.findall(text)
-        if matches:
-            all_matches[name] = matches
-    return all_matches if all_matches else None
-
-
-def read_file(file):
+def detect_in_file(file_path, regex_dict):
     results = []
-    with open(file, 'r') as infile:
-        lines = infile.readlines()
-
-    for idx, line in enumerate(lines, start=1):
-        detections = detect_info(line)
-        if detections:
-            for tipo, valores in detections.items():
-                for valor in valores:
-                    results.append({
-                        "file": file,
-                        "line": idx,
-                        "type": tipo,
-                        "value": valor
-                    })
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            for i, line in enumerate(f, start=1):
+                for name, pattern in regex_dict.items():
+                    for match in pattern.findall(line):
+                        results.append({
+                            "file": file_path,
+                            "line": i,
+                            "type": name,
+                            "value": match
+                        })
+    except FileNotFoundError:
+        print(f"File '{file_path}' not found. Skipping.")
     return results
 
-
-def report(info, output_name):
-    if not info:
-        print("No info found.")
-        return None
-
-    with open(output_name, "w") as outfile:
-        json.dump(info, outfile, indent=4, ensure_ascii=False)
-
-    return output_file
-
-
 if __name__ == "__main__":
-
-    all_infos = []
-
-    if len(sys.argv) < 3 or "-i" not in sys.argv:
-        print("Use: python dlp.py -i <file1> <file2> ... <fileN> [-o output_file]")
+    if "-i" not in sys.argv:
+        print("Usage: python dlp.py -i <file1> <file2> ... [-o output.json] [--regex-file regex.json]")
         sys.exit(1)
 
     file_index = sys.argv.index("-i") + 1
 
-    if file_index >= len(sys.argv):
-        print("Use: python dlp.py -i <file1> <file2> ... <fileN> [-o output_file]")
-        sys.exit(1)
+    # Optional arguments
+    regex_index = sys.argv.index("--regex-file") if "--regex-file" in sys.argv else None
+    o_index = sys.argv.index("-o") if "-o" in sys.argv else None
 
-    if "-o" in sys.argv:
-        o_index = sys.argv.index("-o")
-        files = sys.argv[file_index:o_index]
-        output_file = sys.argv[o_index + 1]
-    else:
-        files = sys.argv[file_index:]
-        output_file = "report_dlp,json"
-        
-    for file_path in files:
-        infos = read_file(file_path)
-        all_infos.extend(infos)
+    # Determine input files range
+    next_args = [i for i in [regex_index, o_index] if i]
+    stop_index = min(next_args) if next_args else len(sys.argv)
+    files = sys.argv[file_index:stop_index]
 
-    final = report(all_infos, output_file)
+    # Default values
+    regex_file = "regex-config.json"
+    output = "report_dlp.json"
+
+    # Override if provided
+    if regex_index:
+        regex_file = sys.argv[regex_index + 1]
+    if o_index:
+        output = sys.argv[o_index + 1]
+
+    regex_dict = load_regex(regex_file)
+
+    all_results = []
+    for f in files:
+        all_results.extend(detect_in_file(f, regex_dict))
+
+    with open(output, "w", encoding="utf-8") as out:
+        json.dump(all_results, out, indent=4, ensure_ascii=False)
+
+    print(f"Report saved to {output}")
