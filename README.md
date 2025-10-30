@@ -1,6 +1,6 @@
 # Simple DLP
 
-This Python script scans text files for potential **sensitive information** such as **CPF**, **email**, **API keys**, **cell phone numbers**, and **IP addresses**.  
+This Python script scans text files for potential **sensitive information** such as **email**, **API keys** and **IP addresses**.  
 It is intended to assist with **Data Loss Prevention (DLP)** by detecting sensitive data patterns.
 
 ---
